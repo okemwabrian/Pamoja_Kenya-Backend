@@ -54,7 +54,7 @@ ROOT_URLCONF = 'pamoja_kenya.urls'
 TEMPLATES = [
     {
         'BACKEND': 'django.template.backends.django.DjangoTemplates',
-        'DIRS': [],
+        'DIRS': [BASE_DIR / 'templates'],
         'APP_DIRS': True,
         'OPTIONS': {
             'context_processors': [
@@ -188,3 +188,16 @@ CELERY_TIMEZONE = TIME_ZONE
 
 # Frontend URL for password reset links
 FRONTEND_URL = config('FRONTEND_URL', default='http://localhost:4200')
+
+# Firebase Email Configuration
+FIREBASE_EMAIL_FUNCTION_URL = config('FIREBASE_EMAIL_FUNCTION_URL', default='https://us-central1-pamoja-kenya.cloudfunctions.net/sendEmail')
+FIREBASE_API_KEY = config('FIREBASE_API_KEY', default='')
+USE_FIREBASE_EMAIL = config('USE_FIREBASE_EMAIL', default=True, cast=bool)
+
+# File Upload Settings
+FILE_UPLOAD_MAX_MEMORY_SIZE = config('MAX_UPLOAD_SIZE', default=5242880, cast=int)  # 5MB
+DATA_UPLOAD_MAX_MEMORY_SIZE = config('MAX_UPLOAD_SIZE', default=5242880, cast=int)  # 5MB
+
+# Allowed file extensions for document uploads
+ALLOWED_DOCUMENT_EXTENSIONS = ['.pdf', '.jpg', '.jpeg', '.png', '.doc', '.docx']
+MAX_DOCUMENT_SIZE = 5 * 1024 * 1024  # 5MB

@@ -1,4 +1,4 @@
-from rest_framework import generics, status
+from rest_framework import generics, status, permissions
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import IsAuthenticated, IsAdminUser, AllowAny
 from rest_framework.response import Response
@@ -12,7 +12,7 @@ from payments.models import Payment
 User = get_user_model()
 
 @api_view(['GET'])
-@permission_classes([AllowAny])  # Temporarily allow all for testing
+@permission_classes([permissions.IsAuthenticated])
 def admin_dashboard_stats(request):
     """Get admin dashboard statistics"""
     stats = {
@@ -29,7 +29,7 @@ def admin_dashboard_stats(request):
     return Response(stats)
 
 @api_view(['GET'])
-@permission_classes([AllowAny])
+@permission_classes([permissions.IsAuthenticated])
 def recent_activities(request):
     """Get recent admin activities"""
     activities = []
@@ -66,7 +66,7 @@ def recent_activities(request):
     return Response(activities[:10])
 
 @api_view(['GET'])
-@permission_classes([AllowAny])
+@permission_classes([permissions.IsAuthenticated])
 def users_list(request):
     """Get list of all users"""
     users = User.objects.all().order_by('-date_joined')
@@ -89,7 +89,7 @@ def users_list(request):
     return Response(users_data)
 
 @api_view(['GET'])
-@permission_classes([AllowAny])
+@permission_classes([permissions.IsAuthenticated])
 def applications_list(request):
     """Get list of all applications"""
     applications = Application.objects.all().order_by('-created_at')
@@ -222,3 +222,38 @@ def create_event(request):
         'id': event.id,
         'message': 'Event created successfully'
     }, status=status.HTTP_201_CREATED)
+
+@api_view(['GET', 'PATCH', 'DELETE'])
+@permission_classes([IsAdminUser])
+def user_detail(request, user_id):
+    """Get, update, or delete user"""
+    try:
+        user = User.objects.get(id=user_id)
+        
+        if request.method == 'GET':
+            return Response({
+                'id': user.id,
+                'username': user.username,
+                'email': user.email,
+                'first_name': user.first_name,
+                'last_name': user.last_name,
+                'is_active': user.is_active,
+                'is_staff': user.is_staff,
+                'date_joined': user.date_joined.isoformat(),
+                'membership_status': getattr(user, 'membership_status', 'active')
+            })
+        
+        elif request.method == 'PATCH':
+            # Update user fields
+            for field in ['first_name', 'last_name', 'email', 'is_active', 'is_staff']:
+                if field in request.data:
+                    setattr(user, field, request.data[field])
+            user.save()
+            return Response({'message': 'User updated successfully'})
+        
+        elif request.method == 'DELETE':
+            user.delete()
+            return Response({'message': 'User deleted successfully'}, status=status.HTTP_204_NO_CONTENT)
+            
+    except User.DoesNotExist:
+        return Response({'error': 'User not found'}, status=status.HTTP_404_NOT_FOUND)

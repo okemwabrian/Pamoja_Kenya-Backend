@@ -2,7 +2,7 @@ from django.db.models.signals import post_save, pre_save
 from django.dispatch import receiver
 from django.utils import timezone
 from .models import Application
-from notifications.email_service import send_registration_email, send_approval_email, send_rejection_email
+from notifications.email_service import send_registration_email, send_approval_email, send_rejection_email, send_document_review_email
 
 @receiver(post_save, sender=Application)
 def handle_application_created(sender, instance, created, **kwargs):
@@ -26,6 +26,12 @@ def handle_application_status_change(sender, instance, **kwargs):
             elif old_instance.status != 'rejected' and instance.status == 'rejected':
                 # Email will be sent in post_save
                 pass
+            
+            # Check if document status changed
+            if (old_instance.identity_document_status != instance.identity_document_status and 
+                instance.identity_document_status in ['approved', 'rejected']):
+                # Store the change to send email after save
+                instance._document_status_changed = True
                 
         except Application.DoesNotExist:
             pass
@@ -38,3 +44,10 @@ def handle_application_status_email(sender, instance, created, **kwargs):
             send_approval_email(instance.user, instance)
         elif instance.status == 'rejected':
             send_rejection_email(instance.user, instance, instance.rejection_reason or "Please review your application details.")
+        
+        # Send document review email if status changed
+        if getattr(instance, '_document_status_changed', False):
+            send_document_review_email(instance.user, instance)
+            # Clean up the flag
+            if hasattr(instance, '_document_status_changed'):
+                delattr(instance, '_document_status_changed')

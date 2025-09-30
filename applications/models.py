@@ -69,6 +69,32 @@ class Application(models.Model):
     employer = models.CharField(max_length=200, blank=True)
     annual_income = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)
     
+    # Document Uploads
+    identity_document = models.FileField(upload_to='applications/identity/', blank=True, null=True, help_text='Upload ID card, passport, or driver\'s license')
+    supporting_document_1 = models.FileField(upload_to='applications/supporting/', blank=True, null=True, help_text='Additional supporting document')
+    supporting_document_2 = models.FileField(upload_to='applications/supporting/', blank=True, null=True, help_text='Additional supporting document')
+    supporting_document_3 = models.FileField(upload_to='applications/supporting/', blank=True, null=True, help_text='Additional supporting document')
+    
+    # Document Review Status
+    identity_document_status = models.CharField(
+        max_length=20,
+        choices=[
+            ('pending', 'Pending Review'),
+            ('approved', 'Approved'),
+            ('rejected', 'Rejected - Resubmit Required')
+        ],
+        default='pending'
+    )
+    documents_review_notes = models.TextField(blank=True, null=True, help_text='Admin notes on document review')
+    documents_reviewed_by = models.ForeignKey(
+        User,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='reviewed_documents'
+    )
+    documents_reviewed_at = models.DateTimeField(null=True, blank=True)
+    
     # Application Details
     amount = models.DecimalField(max_digits=10, decimal_places=2)
     notes = models.TextField(blank=True)

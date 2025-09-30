@@ -112,3 +112,22 @@ def notifications_list(request):
     ]
     
     return Response(notifications)
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def register_for_event(request, event_id):
+    """Register user for an event"""
+    try:
+        event = Event.objects.get(id=event_id)
+        registration, created = EventRegistration.objects.get_or_create(
+            user=request.user,
+            event=event
+        )
+        
+        if created:
+            return Response({'message': 'Successfully registered for event'}, status=status.HTTP_201_CREATED)
+        else:
+            return Response({'message': 'Already registered for this event'}, status=status.HTTP_200_OK)
+            
+    except Event.DoesNotExist:
+        return Response({'error': 'Event not found'}, status=status.HTTP_404_NOT_FOUND)

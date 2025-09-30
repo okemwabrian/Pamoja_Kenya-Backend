@@ -4,10 +4,31 @@ from .models import Claim, Beneficiary, BenefitPayment
 
 @admin.register(Claim)
 class ClaimAdmin(admin.ModelAdmin):
-    list_display = ('user', 'claim_type', 'amount_requested', 'amount_approved', 'status', 'created_at')
-    list_filter = ('claim_type', 'status', 'created_at')
+    list_display = ('user', 'get_claim_type_display', 'amount_requested', 'amount_approved', 'get_status_display', 'created_at')
+    list_filter = ('claim_type', 'status', 'created_at', 'reviewed_at')
     search_fields = ('user__username', 'user__email', 'description')
     readonly_fields = ('created_at', 'updated_at')
+    date_hierarchy = 'created_at'
+    
+    actions = ['approve_claims', 'reject_claims']
+    
+    def approve_claims(self, request, queryset):
+        updated = queryset.filter(status='pending').update(
+            status='approved',
+            reviewed_by=request.user,
+            reviewed_at=timezone.now()
+        )
+        self.message_user(request, f'{updated} claims approved successfully.')
+    approve_claims.short_description = 'Approve selected claims'
+    
+    def reject_claims(self, request, queryset):
+        updated = queryset.filter(status='pending').update(
+            status='rejected',
+            reviewed_by=request.user,
+            reviewed_at=timezone.now()
+        )
+        self.message_user(request, f'{updated} claims rejected successfully.')
+    reject_claims.short_description = 'Reject selected claims'
     
     fieldsets = (
         ('Claim Information', {

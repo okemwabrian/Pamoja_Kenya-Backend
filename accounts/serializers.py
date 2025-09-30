@@ -31,28 +31,28 @@ class UserLoginSerializer(serializers.Serializer):
         identifier = attrs.get('identifier') or attrs.get('username') or attrs.get('email')
         password = attrs.get('password')
 
-        if identifier and password:
-            # Try to authenticate with email first, then username
-            user = None
-            if '@' in identifier:
-                try:
-                    user_obj = User.objects.get(email=identifier)
-                    user = authenticate(username=user_obj.username, password=password)
-                except User.DoesNotExist:
-                    pass
-            else:
-                user = authenticate(username=identifier, password=password)
-
-            if not user:
-                raise serializers.ValidationError('Invalid credentials')
+        if not identifier or not password:
+            raise serializers.ValidationError('Must include username/email and password')
             
-            if not user.is_active:
-                raise serializers.ValidationError('User account is disabled')
+        # Since USERNAME_FIELD is 'email', authenticate with email directly
+        user = authenticate(username=identifier, password=password)
+        
+        # If that fails and identifier doesn't contain @, try to find user by username and auth with email
+        if not user and '@' not in identifier:
+            try:
+                user_obj = User.objects.get(username=identifier)
+                user = authenticate(username=user_obj.email, password=password)
+            except User.DoesNotExist:
+                pass
 
-            attrs['user'] = user
-            return attrs
-        else:
-            raise serializers.ValidationError('Must include identifier and password')
+        if not user:
+            raise serializers.ValidationError('Invalid credentials')
+        
+        if not user.is_active:
+            raise serializers.ValidationError('User account is disabled')
+
+        attrs['user'] = user
+        return attrs
 
 class UserSerializer(serializers.ModelSerializer):
     class Meta:

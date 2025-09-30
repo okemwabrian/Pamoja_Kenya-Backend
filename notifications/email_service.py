@@ -2,9 +2,15 @@ from django.core.mail import send_mail
 from django.template.loader import render_to_string
 from django.conf import settings
 from .models import Notification
+from .firebase_email_service import firebase_email_service
 
 def send_registration_email(user, application):
     """Send email when user registers"""
+    # Use Firebase email service if configured
+    if getattr(settings, 'USE_FIREBASE_EMAIL', False):
+        return firebase_email_service.send_application_confirmation(user, application)
+    
+    # Fallback to Django email
     subject = 'Welcome to Pamoja Kenya - Registration Received'
     
     context = {
@@ -58,6 +64,11 @@ def send_registration_email(user, application):
 
 def send_approval_email(user, application):
     """Send email when application is approved"""
+    # Use Firebase email service if configured
+    if getattr(settings, 'USE_FIREBASE_EMAIL', False):
+        return firebase_email_service.send_application_status_update(user, application)
+    
+    # Fallback to Django email
     subject = 'Congratulations! Your Pamoja Kenya Application Approved'
     
     context = {
@@ -159,8 +170,60 @@ def send_rejection_email(user, application, reason):
         print(f"Failed to send rejection email: {e}")
         return False
 
+def send_document_review_email(user, application):
+    """Send document review notification email"""
+    # Use Firebase email service if configured
+    if getattr(settings, 'USE_FIREBASE_EMAIL', False):
+        return firebase_email_service.send_document_review_notification(user, application)
+    
+    # Fallback to Django email
+    status_text = application.get_identity_document_status_display()
+    subject = f'Document Review {status_text} - Pamoja Kenya MN'
+    
+    message = f"""
+    Dear {user.first_name} {user.last_name},
+    
+    We have completed the review of your submitted documents for Application #{application.id}.
+    
+    Document Status: {status_text}
+    
+    {'Your documents have been approved and your application will proceed to the next stage.' if application.identity_document_status == 'approved' else 'Your documents require resubmission. Please check your account for details and resubmit corrected documents.'}
+    
+    {f'Review Notes: {application.documents_review_notes}' if application.documents_review_notes else ''}
+    
+    Best regards,
+    Pamoja Kenya MN Team
+    """
+    
+    try:
+        send_mail(
+            subject=subject,
+            message=message,
+            from_email=settings.DEFAULT_FROM_EMAIL,
+            recipient_list=[user.email],
+            fail_silently=False,
+        )
+        
+        # Create notification
+        Notification.objects.create(
+            user=user,
+            title=f'Documents {status_text}',
+            message=f'Your submitted documents have been {status_text.lower()}.',
+            notification_type='application_submitted'
+        )
+        
+        return True
+    except Exception as e:
+        print(f"Error sending document review email: {e}")
+        return False
+
 def send_payment_confirmation_email(user, payment):
     """Send email when payment is received"""
+    # Use Firebase email service if configured
+    if getattr(settings, 'USE_FIREBASE_EMAIL', False):
+        return firebase_email_service.send_payment_confirmation(user, payment)
+    
+    # Fallback to Django email
     subject = 'Payment Confirmation - Pamoja Kenya MN'
     
     context = {
