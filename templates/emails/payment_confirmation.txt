@@ -1,0 +1,20 @@
+Dear {{ user.first_name|default:user.email }},
+
+Thank you for your payment to Pamoja Kenya MN.
+
+Payment Details:
+- Amount: ${{ payment.amount }}
+- Payment Method: {{ payment.payment_method|title }}
+- Status: {{ payment.get_status_display }}
+- Date: {{ payment.created_at|date:"F d, Y" }}
+
+{% if payment.transaction_id %}
+Transaction ID: {{ payment.transaction_id }}
+{% endif %}
+
+Your payment has been received and is being processed. You will receive a confirmation once it's completed.
+
+If you have any questions, please contact us at admin@pamojakenyamn.com.
+
+Best regards,
+Pamoja Kenya MN Team

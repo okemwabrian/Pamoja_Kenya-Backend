@@ -1,0 +1,19 @@
+Dear {{ user.first_name|default:user.email }},
+
+Your membership application status has been updated.
+
+Application Details:
+- Application Type: {{ application.application_type|title }}
+- Status: {{ status_text }}
+- Updated: {{ application.updated_at|date:"F d, Y" }}
+
+{% if application.status == 'approved' %}
+Congratulations! Your application has been approved. You can now proceed with the payment process.
+{% elif application.status == 'rejected' %}
+Unfortunately, your application has been rejected. Please contact us for more information.
+{% endif %}
+
+If you have any questions, please contact us at admin@pamojakenyamn.com.
+
+Best regards,
+Pamoja Kenya MN Team

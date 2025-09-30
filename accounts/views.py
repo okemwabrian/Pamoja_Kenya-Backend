@@ -37,9 +37,51 @@ class RegisterView(generics.CreateAPIView):
 @api_view(['POST'])
 @permission_classes([permissions.AllowAny])
 def login_view(request):
-    serializer = UserLoginSerializer(data=request.data)
-    if serializer.is_valid():
-        user = serializer.validated_data['user']
+    from django.contrib.auth import authenticate
+    import logging
+    logger = logging.getLogger(__name__)
+    
+    # Debug: Log incoming data
+    logger.error(f"Login request data: {request.data}")
+    
+    # Get credentials from request - handle multiple field names
+    username = request.data.get('username')
+    email = request.data.get('email')
+    password = request.data.get('password')
+    
+    # Use identifier as fallback (some frontends send this)
+    identifier = request.data.get('identifier') or username or email
+    
+    logger.error(f"Identifier: {identifier}, Password: {'***' if password else None}")
+    
+    if not identifier or not password:
+        return Response({'error': 'Username/email and password are required'}, status=status.HTTP_400_BAD_REQUEST)
+    
+    # Try to authenticate
+    user = None
+    auth_email = None
+    
+    # If identifier looks like email, use it directly
+    if '@' in identifier:
+        auth_email = identifier
+        logger.error(f"Using email directly: {auth_email}")
+    else:
+        # If it's a username, find the user and get their email
+        try:
+            user_obj = User.objects.get(username=identifier)
+            auth_email = user_obj.email
+            logger.error(f"Found user: {user_obj.username}, email: {auth_email}")
+        except User.DoesNotExist:
+            logger.error(f"User not found: {identifier}")
+            return Response({'error': 'Invalid credentials'}, status=status.HTTP_400_BAD_REQUEST)
+    
+    # Authenticate using email (since USERNAME_FIELD = 'email')
+    if auth_email:
+        logger.error(f"Authenticating with email: {auth_email}")
+        user = authenticate(username=auth_email, password=password)
+        logger.error(f"Authentication result: {user}")
+    
+    if user and user.is_active:
         refresh = RefreshToken.for_user(user)
         return Response({
             'user': UserSerializer(user).data,
@@ -48,7 +90,8 @@ def login_view(request):
                 'access': str(refresh.access_token),
             }
         })
-    return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+    else:
+        return Response({'error': 'Invalid credentials'}, status=status.HTTP_400_BAD_REQUEST)
 
 @api_view(['GET'])
 @permission_classes([permissions.IsAuthenticated])
@@ -104,4 +147,55 @@ def contact_form(request):
         return Response({'error': 'All fields are required'}, status=status.HTTP_400_BAD_REQUEST)
     
     return Response({'message': 'Contact form submitted successfully'}, status=status.HTTP_201_CREATED)
+
+@api_view(['POST'])
+@permission_classes([permissions.AllowAny])
+def simple_login(request):
+    """Simple working login endpoint"""
+    from django.contrib.auth import authenticate
+    
+    identifier = request.data.get('identifier') or request.data.get('email')
+    password = request.data.get('password')
+    
+    if not identifier or not password:
+        return Response({'error': 'Email and password required'}, status=status.HTTP_400_BAD_REQUEST)
+    
+    # Authenticate user
+    user = authenticate(username=identifier, password=password)
+    
+    if user and user.is_active:
+        refresh = RefreshToken.for_user(user)
+        return Response({
+            'user': UserSerializer(user).data,
+            'tokens': {
+                'refresh': str(refresh),
+                'access': str(refresh.access_token),
+            }
+        })
+    else:
+        return Response({'error': 'Invalid credentials'}, status=status.HTTP_400_BAD_REQUEST)
+
+@api_view(['GET'])
+@permission_classes([permissions.AllowAny])
+def activities_view(request):
+    """Get user activities/notifications"""
+    return Response([])
+
+@api_view(['GET'])
+@permission_classes([permissions.AllowAny])
+def notifications_list(request):
+    """Get notifications list"""
+    return Response([])
+
+@api_view(['GET'])
+@permission_classes([permissions.AllowAny])
+def notifications_events(request):
+    """Get notification events"""
+    return Response([])
+
+@api_view(['GET'])
+@permission_classes([permissions.AllowAny])
+def notifications_announcements(request):
+    """Get notification announcements"""
+    return Response([])
 

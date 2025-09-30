@@ -1,0 +1,24 @@
+Dear {{ user.first_name|default:user.email }},
+
+Your document review status has been updated.
+
+Application Details:
+- Application Type: {{ application.application_type|title }}
+- Document Status: {{ document_status }}
+- Review Date: {{ application.updated_at|date:"F d, Y" }}
+
+{% if review_notes %}
+Review Notes:
+{{ review_notes }}
+{% endif %}
+
+{% if application.identity_document_status == 'approved' %}
+Your documents have been approved and your application is proceeding.
+{% elif application.identity_document_status == 'rejected' %}
+Your documents require attention. Please review the notes above and resubmit if necessary.
+{% endif %}
+
+If you have any questions, please contact us at admin@pamojakenyamn.com.
+
+Best regards,
+Pamoja Kenya MN Team

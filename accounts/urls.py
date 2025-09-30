@@ -11,4 +11,16 @@ urlpatterns = [
     path('stats/', views.user_stats_view, name='user_stats'),
     path('password-reset/', views.password_reset_request, name='password_reset_request'),
     path('contact/', views.contact_form, name='contact_form'),
+    path('simple-login/', views.simple_login, name='simple_login'),
+    path('activities/', views.activities_view, name='activities'),
+    path('notifications/list/', views.notifications_list, name='notifications_list'),
+]
+
+# Add notification endpoints to main URL patterns
+from django.urls import path, include
+
+notification_patterns = [
+    path('notifications/list/', views.notifications_list, name='notifications_list'),
+    path('notifications/events/', views.notifications_events, name='notifications_events'),
+    path('notifications/announcements/', views.notifications_announcements, name='notifications_announcements'),
 ]

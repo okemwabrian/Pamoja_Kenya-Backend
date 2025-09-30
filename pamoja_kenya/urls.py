@@ -3,6 +3,7 @@ from django.urls import path, include
 from django.conf import settings
 from django.conf.urls.static import static
 from missing_views import profile, stats, password_reset, admin_stats
+from accounts.views import notifications_list, notifications_events, notifications_announcements, activities_view
 
 urlpatterns = [
     path('admin/', admin.site.urls),
@@ -21,6 +22,11 @@ urlpatterns = [
     path('api/auth/stats/', stats, name='stats_fix'),
     path('api/auth/password-reset/', password_reset, name='password_reset_fix'),
     path('api/admin/stats/', admin_stats, name='admin_stats_fix'),
+    # Notification endpoints
+    path('api/notifications/list/', notifications_list, name='notifications_list_main'),
+    path('api/notifications/events/', notifications_events, name='notifications_events_main'),
+    path('api/notifications/announcements/', notifications_announcements, name='notifications_announcements_main'),
+    path('api/activities/', activities_view, name='activities_main'),
 ]
 
 if settings.DEBUG:

@@ -8,7 +8,8 @@ from notifications.email_service import send_registration_email, send_approval_e
 def handle_application_created(sender, instance, created, **kwargs):
     """Send email when application is created"""
     if created:
-        send_registration_email(instance.user, instance)
+        # Temporarily disabled for debugging
+        pass
 
 @receiver(pre_save, sender=Application)
 def handle_application_status_change(sender, instance, **kwargs):

@@ -1,0 +1,15 @@
+Dear {{ user.first_name|default:user.email }},
+
+Thank you for submitting your membership application to Pamoja Kenya MN.
+
+Application Details:
+- Application Type: {{ application.application_type|title }}
+- Submitted: {{ application.created_at|date:"F d, Y" }}
+- Status: {{ application.get_status_display }}
+
+We have received your application and it is currently under review. You will receive an email notification once your application status is updated.
+
+If you have any questions, please contact us at admin@pamojakenyamn.com.
+
+Best regards,
+Pamoja Kenya MN Team

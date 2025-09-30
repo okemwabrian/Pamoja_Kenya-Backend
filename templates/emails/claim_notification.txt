@@ -1,0 +1,19 @@
+Dear {{ user.first_name|default:user.email }},
+
+Your claim status has been updated.
+
+Claim Details:
+- Claim Type: {{ claim.claim_type|title }}
+- Status: {{ status_text }}
+- Updated: {{ claim.updated_at|date:"F d, Y" }}
+
+{% if claim.status == 'approved' %}
+Your claim has been approved and will be processed accordingly.
+{% elif claim.status == 'rejected' %}
+Unfortunately, your claim has been rejected. Please contact us for more information.
+{% endif %}
+
+If you have any questions, please contact us at admin@pamojakenyamn.com.
+
+Best regards,
+Pamoja Kenya MN Team

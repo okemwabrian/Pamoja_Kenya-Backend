@@ -23,27 +23,28 @@ class UserRegistrationSerializer(serializers.ModelSerializer):
 
 class UserLoginSerializer(serializers.Serializer):
     username = serializers.CharField(required=False)
-    email = serializers.CharField(required=False)
-    identifier = serializers.CharField(required=False)
+    email = serializers.EmailField(required=False)
     password = serializers.CharField()
 
     def validate(self, attrs):
-        identifier = attrs.get('identifier') or attrs.get('username') or attrs.get('email')
+        username = attrs.get('username')
+        email = attrs.get('email')
         password = attrs.get('password')
-
-        if not identifier or not password:
-            raise serializers.ValidationError('Must include username/email and password')
-            
-        # Since USERNAME_FIELD is 'email', authenticate with email directly
-        user = authenticate(username=identifier, password=password)
         
-        # If that fails and identifier doesn't contain @, try to find user by username and auth with email
-        if not user and '@' not in identifier:
+        identifier = username or email
+        if not identifier or not password:
+            raise serializers.ValidationError('Username/email and password are required')
+        
+        # Since USERNAME_FIELD = 'email', we need to get the email for authentication
+        auth_email = email
+        if username and not email:
             try:
-                user_obj = User.objects.get(username=identifier)
-                user = authenticate(username=user_obj.email, password=password)
+                user_obj = User.objects.get(username=username)
+                auth_email = user_obj.email
             except User.DoesNotExist:
-                pass
+                raise serializers.ValidationError('Invalid credentials')
+        
+        user = authenticate(username=auth_email, password=password)
 
         if not user:
             raise serializers.ValidationError('Invalid credentials')
@@ -59,7 +60,7 @@ class UserSerializer(serializers.ModelSerializer):
         model = User
         fields = ('id', 'username', 'email', 'first_name', 'last_name', 'role', 
                  'phone', 'address', 'city', 'state', 'zip_code', 'membership_status',
-                 'is_active', 'created_at')
+                 'is_active', 'is_staff', 'is_superuser', 'created_at')
         read_only_fields = ('id', 'created_at')
 
 class UserProfileSerializer(serializers.ModelSerializer):

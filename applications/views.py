@@ -11,7 +11,18 @@ def create_application(request):
     """Create a new membership application"""
     data = request.data
     
+    # Get user from token or use default for testing
+    from accounts.models import User
+    if request.user.is_authenticated:
+        user = request.user
+    else:
+        user, created = User.objects.get_or_create(
+            email='test@example.com',
+            defaults={'username': 'testuser', 'first_name': 'Test', 'last_name': 'User'}
+        )
+    
     application = Application.objects.create(
+        user=user,
         application_type=data.get('application_type', 'single'),
         first_name=data.get('first_name'),
         middle_name=data.get('middle_name', ''),
@@ -55,22 +66,23 @@ def create_application(request):
 @permission_classes([AllowAny])
 def my_applications(request):
     """Get applications for current user"""
-    # Mock data for testing
-    applications = [
-        {
-            'id': 1,
-            'type': 'Single Family',
-            'status': 'approved',
-            'amount': 627.30,
-            'created_at': '2025-09-20'
-        },
-        {
-            'id': 2,
-            'type': 'Double Family',
-            'status': 'pending',
-            'amount': 1254.60,
-            'created_at': '2025-09-25'
-        }
-    ]
+    if request.user.is_authenticated:
+        applications = Application.objects.filter(user=request.user)
+    else:
+        # For testing, show recent applications
+        applications = Application.objects.all().order_by('-created_at')[:5]
     
-    return Response(applications)
+    applications_data = []
+    for app in applications:
+        applications_data.append({
+            'id': app.id,
+            'type': app.get_application_type_display(),
+            'status': app.status,
+            'amount': float(app.amount),
+            'created_at': app.created_at.strftime('%Y-%m-%d'),
+            'first_name': app.first_name,
+            'last_name': app.last_name,
+            'email': app.email
+        })
+    
+    return Response(applications_data)
