@@ -4,6 +4,7 @@ from rest_framework.permissions import IsAuthenticated, AllowAny
 from rest_framework.response import Response
 from django.utils import timezone
 from .models import Application
+from notifications.email_service import send_application_confirmation_email
 
 @api_view(['POST'])
 @permission_classes([AllowAny])
@@ -47,6 +48,7 @@ def create_application(request):
         spouse_parent_2=data.get('spouse_parent_2', ''),
         sibling_1=data.get('sibling_1', ''),
         sibling_2=data.get('sibling_2', ''),
+        sibling_3=data.get('sibling_3', ''),
         emergency_contact_name=data.get('emergency_contact_name', ''),
         emergency_contact_phone=data.get('emergency_contact_phone', ''),
         emergency_contact_relationship=data.get('emergency_contact_relationship', ''),
@@ -55,6 +57,9 @@ def create_application(request):
         notes=data.get('notes', ''),
         status='pending'
     )
+    
+    # Send application confirmation email
+    send_application_confirmation_email(user, application)
     
     return Response({
         'id': application.id,
@@ -124,6 +129,9 @@ def submit_application(request):
         constitution_agreed=data.get('constitution_agreed', False),
         status='pending'
     )
+    
+    # Send application confirmation email
+    send_application_confirmation_email(user, application)
     
     return Response({
         'id': application.id,

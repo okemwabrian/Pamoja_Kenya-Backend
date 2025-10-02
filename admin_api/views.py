@@ -6,9 +6,10 @@ from django.contrib.auth import get_user_model
 from django.db.models import Count, Sum
 from applications.models import Application
 from claims.models import Claim
-from notifications.models import Event, Announcement, Notification, Meeting
+from notifications.models import Event, Announcement, Notification, Meeting, ContactMessage, AdminNotification
 from payments.models import Payment
 from .permissions import IsAdminOrStaff
+from notifications.email_service import send_approval_email, send_rejection_email, send_claim_status_email
 
 User = get_user_model()
 
@@ -20,14 +21,8 @@ def admin_dashboard_stats(request):
         'total_users': User.objects.count(),
         'total_applications': Application.objects.count(),
         'pending_applications': Application.objects.filter(status='pending').count(),
-        'approved_applications': Application.objects.filter(status='approved').count(),
-        'rejected_applications': Application.objects.filter(status='rejected').count(),
         'total_claims': Claim.objects.count(),
-        'pending_claims': Claim.objects.filter(status='pending').count(),
-        'approved_claims': Claim.objects.filter(status='approved').count(),
-        'rejected_claims': Claim.objects.filter(status='rejected').count(),
-        'total_payments': Payment.objects.count(),
-        'total_revenue': float(Payment.objects.aggregate(total=Sum('amount'))['total'] or 0),
+        'pending_claims': Claim.objects.filter(status='pending').count()
     }
     return Response(stats)
 
@@ -104,12 +99,9 @@ def applications_list(request):
             'applicant': f'{app.first_name} {app.last_name}',
             'email': app.email,
             'type': app.application_type,
+            'amount': float(app.amount),
             'status': app.status,
-            'amount': str(app.amount),
-            'created_at': app.created_at.strftime('%Y-%m-%d %H:%M'),
-            'phone': app.phone,
-            'city': app.city,
-            'state': app.state
+            'created_at': app.created_at.isoformat()
         })
     
     return Response(apps_data)
@@ -121,16 +113,23 @@ def update_application_status(request, app_id):
     try:
         application = Application.objects.get(id=app_id)
         new_status = request.data.get('status')
-        admin_notes = request.data.get('admin_notes', '')
+        reason = request.data.get('reason', '')
+        send_email = request.data.get('send_email', True)
         
-        if new_status in ['pending', 'approved', 'rejected']:
+        if new_status in ['approved', 'rejected']:
             application.status = new_status
             if hasattr(application, 'admin_notes'):
-                application.admin_notes = admin_notes
+                application.admin_notes = reason
             application.save()
             
-            # Create notification for user
-            if hasattr(application, 'user') and application.user:
+            # Send email notification if requested
+            if send_email and hasattr(application, 'user') and application.user:
+                if new_status == 'approved':
+                    send_approval_email(application.user, application)
+                elif new_status == 'rejected':
+                    send_rejection_email(application.user, application, reason)
+                
+                # Create notification for user
                 Notification.objects.create(
                     user=application.user,
                     title=f'Application {new_status.title()}',
@@ -177,7 +176,12 @@ def create_announcement(request):
     
     return Response({
         'id': announcement.id,
-        'message': 'Announcement created successfully'
+        'title': announcement.title,
+        'content': announcement.content,
+        'priority': announcement.priority,
+        'is_pinned': announcement.is_pinned,
+        'created_by': announcement.created_by.username,
+        'created_at': announcement.created_at.isoformat()
     }, status=status.HTTP_201_CREATED)
 
 @api_view(['POST'])
@@ -214,7 +218,14 @@ def create_event(request):
     
     return Response({
         'id': event.id,
-        'message': 'Event created successfully'
+        'title': event.title,
+        'description': event.description,
+        'date': event.date.isoformat(),
+        'location': event.location,
+        'is_featured': event.is_featured,
+        'registration_required': event.registration_required,
+        'created_by': event.created_by.username,
+        'created_at': event.created_at.isoformat()
     }, status=status.HTTP_201_CREATED)
 
 @api_view(['POST'])
@@ -253,7 +264,16 @@ def create_meeting(request):
     
     return Response({
         'id': meeting.id,
-        'message': 'Meeting created successfully'
+        'title': meeting.title,
+        'description': meeting.description,
+        'date': meeting.date.isoformat(),
+        'duration': meeting.duration,
+        'type': meeting.type,
+        'max_participants': meeting.max_participants,
+        'meeting_link': meeting.meeting_link,
+        'require_registration': meeting.require_registration,
+        'created_by': meeting.created_by.username,
+        'created_at': meeting.created_at.isoformat()
     }, status=status.HTTP_201_CREATED)
 
 @api_view(['GET', 'PATCH', 'DELETE'])
@@ -299,21 +319,23 @@ def admin_claims_list(request):
     claims_data = []
     
     for claim in claims:
-        claims_data.append({
+        claim_data = {
             'id': claim.id,
-            'user': claim.user.username if claim.user else 'Unknown',
-            'user_email': claim.user.email if claim.user else '',
+            'user': {'username': claim.user.username if claim.user else 'Unknown'},
             'claim_type': claim.get_claim_type_display(),
-            'amount_requested': str(claim.amount_requested),
-            'amount_approved': str(claim.amount_approved) if claim.amount_approved else None,
+            'amount_requested': float(claim.amount_requested),
             'status': claim.status,
-            'status_display': claim.get_status_display(),
             'description': claim.description,
-            'supporting_documents': claim.supporting_documents.url if claim.supporting_documents else None,
-            'admin_notes': claim.admin_notes,
             'created_at': claim.created_at.isoformat(),
-            'updated_at': claim.updated_at.isoformat()
-        })
+            'supporting_documents': bool(claim.supporting_documents)
+        }
+        
+        if claim.amount_approved:
+            claim_data['amount_approved'] = float(claim.amount_approved)
+        if claim.admin_notes:
+            claim_data['admin_notes'] = claim.admin_notes
+            
+        claims_data.append(claim_data)
     
     return Response(claims_data)
 
@@ -325,22 +347,33 @@ def admin_update_claim_status(request, claim_id):
     try:
         claim = Claim.objects.get(id=claim_id)
         
-        if 'status' in request.data:
-            claim.status = request.data['status']
-        if 'amount_approved' in request.data:
-            claim.amount_approved = request.data['amount_approved']
-        if 'admin_notes' in request.data:
-            claim.admin_notes = request.data['admin_notes']
+        new_status = request.data.get('status')
+        admin_notes = request.data.get('admin_notes', '')
+        amount_approved = request.data.get('amount_approved')
+        send_email = request.data.get('send_email', True)
         
-        claim.reviewed_by = request.user
-        claim.reviewed_at = timezone.now()
-        claim.save()
-        
-        return Response({
-            'id': claim.id,
-            'status': claim.status,
-            'message': 'Claim updated successfully'
-        })
+        if new_status in ['approved', 'rejected']:
+            claim.status = new_status
+            claim.admin_notes = admin_notes
+            
+            if amount_approved and new_status == 'approved':
+                claim.amount_approved = amount_approved
+            
+            claim.reviewed_by = request.user
+            claim.reviewed_at = timezone.now()
+            claim.save()
+            
+            # Send email notification if requested
+            if send_email and claim.user:
+                send_claim_status_email(claim.user, claim)
+            
+            return Response({
+                'id': claim.id,
+                'status': claim.status,
+                'message': 'Claim updated successfully'
+            })
+        else:
+            return Response({'error': 'Invalid status'}, status=status.HTTP_400_BAD_REQUEST)
         
     except Claim.DoesNotExist:
         return Response({'error': 'Claim not found'}, status=status.HTTP_404_NOT_FOUND)
@@ -370,17 +403,23 @@ def get_application_documents(request, app_id):
         documents = []
         
         # Check for document fields in application model
-        if hasattr(application, 'documents_review_notes') and application.documents_review_notes:
+        if hasattr(application, 'identity_document') and application.identity_document:
             documents.append({
-                'type': 'review_notes',
-                'content': application.documents_review_notes
+                'id': 1,
+                'name': 'Identity Document',
+                'type': 'identity',
+                'url': application.identity_document.url
             })
         
-        return Response({
-            'application_id': app_id,
-            'documents': documents,
-            'applicant': f'{application.first_name} {application.last_name}'
-        })
+        if hasattr(application, 'supporting_document_1') and application.supporting_document_1:
+            documents.append({
+                'id': 2,
+                'name': 'Supporting Document 1',
+                'type': 'supporting',
+                'url': application.supporting_document_1.url
+            })
+        
+        return Response(documents)
         
     except Application.DoesNotExist:
         return Response({'error': 'Application not found'}, status=status.HTTP_404_NOT_FOUND)
@@ -406,3 +445,265 @@ def admin_payments_list(request):
         })
     
     return Response(payments_data)
+
+# Content Management CRUD Operations
+@api_view(['GET'])
+@permission_classes([IsAdminOrStaff])
+def admin_announcements_list(request):
+    """Get all announcements for admin"""
+    announcements = Announcement.objects.all().order_by('-created_at')
+    data = []
+    for ann in announcements:
+        data.append({
+            'id': ann.id,
+            'title': ann.title,
+            'content': ann.content,
+            'priority': ann.priority,
+            'is_pinned': ann.is_pinned,
+            'is_active': ann.is_active,
+            'created_by': ann.created_by.username,
+            'created_at': ann.created_at.isoformat(),
+            'updated_at': ann.updated_at.isoformat()
+        })
+    return Response(data)
+
+@api_view(['PUT'])
+@permission_classes([IsAdminOrStaff])
+def admin_update_announcement(request, announcement_id):
+    """Update announcement"""
+    try:
+        announcement = Announcement.objects.get(id=announcement_id)
+        data = request.data
+        
+        announcement.title = data.get('title', announcement.title)
+        announcement.content = data.get('content', announcement.content)
+        announcement.priority = data.get('priority', announcement.priority)
+        announcement.is_pinned = data.get('is_pinned', announcement.is_pinned)
+        announcement.is_active = data.get('is_active', announcement.is_active)
+        announcement.save()
+        
+        return Response({
+            'id': announcement.id,
+            'title': announcement.title,
+            'content': announcement.content,
+            'priority': announcement.priority,
+            'is_pinned': announcement.is_pinned,
+            'created_by': announcement.created_by.username,
+            'created_at': announcement.created_at.isoformat()
+        })
+    except Announcement.DoesNotExist:
+        return Response({'error': 'Announcement not found'}, status=status.HTTP_404_NOT_FOUND)
+
+@api_view(['DELETE'])
+@permission_classes([IsAdminOrStaff])
+def admin_delete_announcement(request, announcement_id):
+    """Delete announcement"""
+    try:
+        announcement = Announcement.objects.get(id=announcement_id)
+        announcement.delete()
+        return Response({'message': 'Announcement deleted successfully'}, status=status.HTTP_204_NO_CONTENT)
+    except Announcement.DoesNotExist:
+        return Response({'error': 'Announcement not found'}, status=status.HTTP_404_NOT_FOUND)
+
+@api_view(['GET'])
+@permission_classes([IsAdminOrStaff])
+def admin_events_list(request):
+    """Get all events for admin"""
+    events = Event.objects.all().order_by('-created_at')
+    data = []
+    for event in events:
+        data.append({
+            'id': event.id,
+            'title': event.title,
+            'description': event.description,
+            'date': event.date.isoformat(),
+            'location': event.location,
+            'is_featured': event.is_featured,
+            'registration_required': event.registration_required,
+            'is_active': event.is_active,
+            'created_by': event.created_by.username,
+            'created_at': event.created_at.isoformat()
+        })
+    return Response(data)
+
+@api_view(['PUT'])
+@permission_classes([IsAdminOrStaff])
+def admin_update_event(request, event_id):
+    """Update event"""
+    try:
+        event = Event.objects.get(id=event_id)
+        data = request.data
+        
+        event.title = data.get('title', event.title)
+        event.description = data.get('description', event.description)
+        if 'date' in data:
+            event.date = data['date']
+        event.location = data.get('location', event.location)
+        event.is_featured = data.get('is_featured', event.is_featured)
+        event.registration_required = data.get('registration_required', event.registration_required)
+        event.is_active = data.get('is_active', event.is_active)
+        event.save()
+        
+        return Response({
+            'id': event.id,
+            'title': event.title,
+            'description': event.description,
+            'date': event.date.isoformat(),
+            'location': event.location,
+            'is_featured': event.is_featured,
+            'registration_required': event.registration_required,
+            'created_by': event.created_by.username,
+            'created_at': event.created_at.isoformat()
+        })
+    except Event.DoesNotExist:
+        return Response({'error': 'Event not found'}, status=status.HTTP_404_NOT_FOUND)
+
+@api_view(['DELETE'])
+@permission_classes([IsAdminOrStaff])
+def admin_delete_event(request, event_id):
+    """Delete event"""
+    try:
+        event = Event.objects.get(id=event_id)
+        event.delete()
+        return Response({'message': 'Event deleted successfully'}, status=status.HTTP_204_NO_CONTENT)
+    except Event.DoesNotExist:
+        return Response({'error': 'Event not found'}, status=status.HTTP_404_NOT_FOUND)
+
+@api_view(['GET'])
+@permission_classes([IsAdminOrStaff])
+def admin_meetings_list(request):
+    """Get all meetings for admin"""
+    meetings = Meeting.objects.all().order_by('-created_at')
+    data = []
+    for meeting in meetings:
+        data.append({
+            'id': meeting.id,
+            'title': meeting.title,
+            'description': meeting.description,
+            'date': meeting.date.isoformat(),
+            'duration': meeting.duration,
+            'type': meeting.type,
+            'max_participants': meeting.max_participants,
+            'meeting_link': meeting.meeting_link,
+            'require_registration': meeting.require_registration,
+            'created_by': meeting.created_by.username,
+            'created_at': meeting.created_at.isoformat()
+        })
+    return Response(data)
+
+@api_view(['PUT'])
+@permission_classes([IsAdminOrStaff])
+def admin_update_meeting(request, meeting_id):
+    """Update meeting"""
+    try:
+        meeting = Meeting.objects.get(id=meeting_id)
+        data = request.data
+        
+        meeting.title = data.get('title', meeting.title)
+        meeting.description = data.get('description', meeting.description)
+        if 'date' in data:
+            meeting.date = data['date']
+        meeting.duration = data.get('duration', meeting.duration)
+        meeting.type = data.get('type', meeting.type)
+        meeting.max_participants = data.get('max_participants', meeting.max_participants)
+        meeting.meeting_link = data.get('meeting_link', meeting.meeting_link)
+        meeting.require_registration = data.get('require_registration', meeting.require_registration)
+        meeting.save()
+        
+        return Response({
+            'id': meeting.id,
+            'title': meeting.title,
+            'description': meeting.description,
+            'date': meeting.date.isoformat(),
+            'duration': meeting.duration,
+            'type': meeting.type,
+            'created_by': meeting.created_by.username,
+            'created_at': meeting.created_at.isoformat()
+        })
+    except Meeting.DoesNotExist:
+        return Response({'error': 'Meeting not found'}, status=status.HTTP_404_NOT_FOUND)
+
+@api_view(['DELETE'])
+@permission_classes([IsAdminOrStaff])
+def admin_delete_meeting(request, meeting_id):
+    """Delete meeting"""
+    try:
+        meeting = Meeting.objects.get(id=meeting_id)
+        meeting.delete()
+        return Response({'message': 'Meeting deleted successfully'}, status=status.HTTP_204_NO_CONTENT)
+    except Meeting.DoesNotExist:
+        return Response({'error': 'Meeting not found'}, status=status.HTTP_404_NOT_FOUND)
+
+@api_view(['GET'])
+@permission_classes([IsAdminOrStaff])
+def admin_contacts_list(request):
+    """Get all contact messages for admin"""
+    contacts = ContactMessage.objects.all().order_by('-created_at')
+    data = []
+    for contact in contacts:
+        data.append({
+            'id': contact.id,
+            'name': contact.name,
+            'email': contact.email,
+            'phone': contact.phone,
+            'subject': contact.subject,
+            'help_type': contact.help_type,
+            'message': contact.message,
+            'status': contact.status,
+            'admin_notes': contact.admin_notes,
+            'created_at': contact.created_at.isoformat(),
+            'resolved_at': contact.resolved_at.isoformat() if contact.resolved_at else None
+        })
+    return Response(data)
+
+@api_view(['PATCH'])
+@permission_classes([IsAdminOrStaff])
+def admin_update_contact(request, contact_id):
+    """Update contact message status and notes"""
+    from django.utils import timezone
+    try:
+        contact = ContactMessage.objects.get(id=contact_id)
+        data = request.data
+        
+        if 'status' in data:
+            contact.status = data['status']
+            if data['status'] == 'resolved' and not contact.resolved_at:
+                contact.resolved_at = timezone.now()
+        
+        if 'admin_notes' in data:
+            contact.admin_notes = data['admin_notes']
+        
+        contact.save()
+        
+        return Response({
+            'id': contact.id,
+            'name': contact.name,
+            'email': contact.email,
+            'subject': contact.subject,
+            'status': contact.status,
+            'admin_notes': contact.admin_notes,
+            'message': 'Contact message updated successfully'
+        })
+    except ContactMessage.DoesNotExist:
+        return Response({'error': 'Contact message not found'}, status=status.HTTP_404_NOT_FOUND)
+
+@api_view(['GET'])
+@permission_classes([IsAdminOrStaff])
+def get_claim_documents(request, claim_id):
+    """Get claim documents"""
+    try:
+        claim = Claim.objects.get(id=claim_id)
+        documents = []
+        
+        if claim.supporting_documents:
+            documents.append({
+                'id': 1,
+                'name': 'Supporting Documents',
+                'type': 'supporting',
+                'url': claim.supporting_documents.url
+            })
+        
+        return Response(documents)
+        
+    except Claim.DoesNotExist:
+        return Response({'error': 'Claim not found'}, status=status.HTTP_404_NOT_FOUND)

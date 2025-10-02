@@ -1,5 +1,8 @@
 from django.contrib import admin
-from .models import Notification, Event, Announcement, EventRegistration
+from .models import (
+    Notification, Event, Announcement, EventRegistration,
+    Meeting, ContactMessage, AdminNotification
+)
 
 @admin.register(Notification)
 class NotificationAdmin(admin.ModelAdmin):
@@ -120,3 +123,47 @@ class EventRegistrationAdmin(admin.ModelAdmin):
         updated = queryset.update(attended=False)
         self.message_user(request, f'{updated} registrations marked as not attended.')
     mark_as_not_attended.short_description = 'Mark selected registrations as not attended'
+
+@admin.register(Meeting)
+class MeetingAdmin(admin.ModelAdmin):
+    list_display = ('title', 'date', 'type', 'duration', 'max_participants', 'created_by')
+    list_filter = ('type', 'require_registration', 'send_notifications', 'date')
+    search_fields = ('title', 'description', 'created_by__username')
+    readonly_fields = ('created_at', 'updated_at')
+    date_hierarchy = 'date'
+
+@admin.register(ContactMessage)
+class ContactMessageAdmin(admin.ModelAdmin):
+    list_display = ('name', 'email', 'subject', 'help_type', 'status', 'created_at')
+    list_filter = ('help_type', 'status', 'created_at')
+    search_fields = ('name', 'email', 'subject', 'message')
+    readonly_fields = ('created_at',)
+    date_hierarchy = 'created_at'
+    
+    actions = ['mark_in_progress', 'mark_resolved']
+    
+    def mark_in_progress(self, request, queryset):
+        updated = queryset.update(status='in_progress')
+        self.message_user(request, f'{updated} messages marked as in progress.')
+    mark_in_progress.short_description = 'Mark as in progress'
+    
+    def mark_resolved(self, request, queryset):
+        from django.utils import timezone
+        updated = queryset.update(status='resolved', resolved_at=timezone.now())
+        self.message_user(request, f'{updated} messages marked as resolved.')
+    mark_resolved.short_description = 'Mark as resolved'
+
+@admin.register(AdminNotification)
+class AdminNotificationAdmin(admin.ModelAdmin):
+    list_display = ('type', 'title', 'priority', 'is_read', 'created_at')
+    list_filter = ('type', 'priority', 'is_read', 'created_at')
+    search_fields = ('title', 'message', 'type')
+    readonly_fields = ('created_at',)
+    date_hierarchy = 'created_at'
+    
+    actions = ['mark_as_read']
+    
+    def mark_as_read(self, request, queryset):
+        updated = queryset.update(is_read=True)
+        self.message_user(request, f'{updated} admin notifications marked as read.')
+    mark_as_read.short_description = 'Mark as read'

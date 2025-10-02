@@ -10,6 +10,9 @@ from .serializers import (
     UserSerializer,
     UserProfileSerializer
 )
+from .jwt_utils import CustomRefreshToken
+from notifications.email_service import send_welcome_email, send_password_reset_email, generate_password_reset_url, send_contact_form_notification
+from notifications.models import ContactMessage
 
 User = get_user_model()
 
@@ -23,11 +26,17 @@ class RegisterView(generics.CreateAPIView):
         serializer.is_valid(raise_exception=True)
         user = serializer.save()
         
-        # Generate JWT tokens
-        refresh = RefreshToken.for_user(user)
+        # Send welcome email
+        send_welcome_email(user)
+        
+        # Generate JWT tokens with custom expiration
+        refresh = CustomRefreshToken.for_user(user)
+        
+        user_data = UserSerializer(user).data
+        user_data['is_admin'] = user.is_staff or user.is_superuser
         
         return Response({
-            'user': UserSerializer(user).data,
+            'user': user_data,
             'tokens': {
                 'refresh': str(refresh),
                 'access': str(refresh.access_token),
@@ -82,9 +91,13 @@ def login_view(request):
         logger.error(f"Authentication result: {user}")
     
     if user and user.is_active:
-        refresh = RefreshToken.for_user(user)
+        refresh = CustomRefreshToken.for_user(user)
+        
+        user_data = UserSerializer(user).data
+        user_data['is_admin'] = user.is_staff or user.is_superuser
+        
         return Response({
-            'user': UserSerializer(user).data,
+            'user': user_data,
             'tokens': {
                 'refresh': str(refresh),
                 'access': str(refresh.access_token),
@@ -132,7 +145,8 @@ def password_reset_request(request):
     
     try:
         user = User.objects.get(email=email)
-        # In production, send actual reset email
+        reset_url = generate_password_reset_url(user)
+        send_password_reset_email(user, reset_url)
         return Response({'message': 'Password reset email sent successfully'})
     except User.DoesNotExist:
         return Response({'message': 'If the email exists, a reset link has been sent'})
@@ -146,6 +160,19 @@ def contact_form(request):
     if not all(data.get(field) for field in required_fields):
         return Response({'error': 'All fields are required'}, status=status.HTTP_400_BAD_REQUEST)
     
+    # Create contact message
+    contact_message = ContactMessage.objects.create(
+        name=data['name'],
+        email=data['email'],
+        phone=data.get('phone', ''),
+        subject=data['subject'],
+        help_type=data.get('help_type', 'general'),
+        message=data['message']
+    )
+    
+    # Send notification to admin
+    send_contact_form_notification(contact_message)
+    
     return Response({'message': 'Contact form submitted successfully'}, status=status.HTTP_201_CREATED)
 
 @api_view(['POST'])
@@ -153,13 +180,17 @@ def contact_form(request):
 def logout_view(request):
     """Logout user by blacklisting refresh token"""
     try:
-        refresh_token = request.data.get('refresh')
+        # Get refresh token from request
+        refresh_token = request.data.get('refresh_token') or request.data.get('refresh')
+        
         if refresh_token:
+            # Blacklist the refresh token
             token = RefreshToken(refresh_token)
             token.blacklist()
-        return Response({'message': 'Successfully logged out'}, status=status.HTTP_200_OK)
+        
+        return Response({'message': 'Successfully logged out'}, status=200)
     except Exception as e:
-        return Response({'error': 'Invalid token'}, status=status.HTTP_400_BAD_REQUEST)
+        return Response({'error': 'Invalid token'}, status=400)
 
 @api_view(['POST'])
 @permission_classes([permissions.AllowAny])
@@ -177,9 +208,13 @@ def simple_login(request):
     user = authenticate(username=identifier, password=password)
     
     if user and user.is_active:
-        refresh = RefreshToken.for_user(user)
+        refresh = CustomRefreshToken.for_user(user)
+        
+        user_data = UserSerializer(user).data
+        user_data['is_admin'] = user.is_staff or user.is_superuser
+        
         return Response({
-            'user': UserSerializer(user).data,
+            'user': user_data,
             'tokens': {
                 'refresh': str(refresh),
                 'access': str(refresh.access_token),

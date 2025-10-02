@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <title>Claim Status Update - Pamoja Kenya MN</title>
+    <style>
+        body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; }
+        .container { max-width: 600px; margin: 0 auto; padding: 20px; }
+        .header { background: #2c5aa0; color: white; padding: 20px; text-align: center; }
+        .content { padding: 20px; background: #f9f9f9; }
+        .footer { background: #333; color: white; padding: 15px; text-align: center; }
+        .status-approved { color: #28a745; font-weight: bold; }
+        .status-rejected { color: #dc3545; font-weight: bold; }
+        .status-pending { color: #ffc107; font-weight: bold; }
+        .claim-details { background: white; padding: 15px; border-radius: 5px; margin: 15px 0; }
+        .btn { background: #2c5aa0; color: white; padding: 12px 24px; text-decoration: none; border-radius: 5px; display: inline-block; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>Claim Status Update</h1>
+        </div>
+        <div class="content">
+            <h2>Dear {{ user.first_name }} {{ user.last_name }},</h2>
+            <p>Your claim status has been updated.</p>
+            
+            <div class="claim-details">
+                <h3>Claim Details:</h3>
+                <p><strong>Beneficiary:</strong> {{ claim.beneficiary.full_name }}</p>
+                <p><strong>Amount:</strong> ${{ claim.amount }}</p>
+                <p><strong>Status:</strong> <span class="status-{{ claim.status }}">{{ status_text }}</span></p>
+                <p><strong>Date:</strong> {{ claim.created_at|date:"F d, Y" }}</p>
+                {% if claim.admin_notes %}
+                <p><strong>Notes:</strong> {{ claim.admin_notes }}</p>
+                {% endif %}
+            </div>
+            
+            {% if claim.status == 'approved' %}
+            <p style="color: #28a745;">Congratulations! Your claim has been approved and will be processed.</p>
+            {% elif claim.status == 'rejected' %}
+            <p style="color: #dc3545;">Your claim has been rejected. Please contact support for more information.</p>
+            {% endif %}
+            
+            <p style="text-align: center; margin: 30px 0;">
+                <a href="{{ frontend_url }}/claims" class="btn">View Claim Details</a>
+            </p>
+        </div>
+        <div class="footer">
+            <p>&copy; 2024 {{ site_name }}. All rights reserved.</p>
+        </div>
+    </div>
+</body>
+</html>

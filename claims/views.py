@@ -1,5 +1,5 @@
-from rest_framework import generics, status
-from rest_framework.decorators import api_view, permission_classes
+from rest_framework import generics, status, parsers
+from rest_framework.decorators import api_view, permission_classes, parser_classes
 from rest_framework.permissions import IsAuthenticated, IsAdminUser, AllowAny
 from rest_framework.response import Response
 from django.utils import timezone
@@ -8,21 +8,69 @@ from .serializers import ClaimSerializer, ClaimCreateSerializer, BeneficiarySeri
 from notifications.models import Notification
 
 @api_view(['POST'])
-@permission_classes([AllowAny])
+@permission_classes([IsAuthenticated])
+@parser_classes([parsers.MultiPartParser, parsers.FormParser])
 def submit_claim(request):
+    """Submit claim with multipart form data and file upload"""
+    # Get user
+    user = request.user
+    
+    # Create claim with form data
+    claim_data = {
+        'claim_type': request.data.get('claim_type'),
+        'amount_requested': request.data.get('amount_requested'),
+        'description': request.data.get('description'),
+        'supporting_documents': request.FILES.get('supporting_documents')
+    }
+    
+    # Validate required fields
+    required_fields = ['claim_type', 'amount_requested', 'description']
+    for field in required_fields:
+        if not claim_data.get(field):
+            return Response({'error': f'{field} is required'}, status=status.HTTP_400_BAD_REQUEST)
+    
+    # Create claim
+    claim = Claim.objects.create(
+        user=user,
+        claim_type=claim_data['claim_type'],
+        amount_requested=claim_data['amount_requested'],
+        description=claim_data['description'],
+        supporting_documents=claim_data.get('supporting_documents')
+    )
+    
+    # Create notification for user
+    Notification.objects.create(
+        user=user,
+        title='Claim Submitted',
+        message=f'Your {claim.get_claim_type_display()} claim for ${claim.amount_requested} has been submitted.',
+        notification_type='claim_submitted'
+    )
+    
+    return Response({
+        'id': claim.id,
+        'claim_type': claim.get_claim_type_display(),
+        'amount_requested': str(claim.amount_requested),
+        'status': claim.status,
+        'message': 'Claim submitted successfully'
+    }, status=status.HTTP_201_CREATED)
+
+@api_view(['GET', 'POST'])
+@permission_classes([IsAuthenticated])
+def create_claim(request):
+    """Handle both listing and creating claims"""
+    if request.method == 'GET':
+        claims = Claim.objects.filter(user=request.user)
+        serializer = ClaimSerializer(claims, many=True)
+        return Response(serializer.data)
+    
+    # POST method
     serializer = ClaimCreateSerializer(data=request.data)
     if serializer.is_valid():
-        # Get user or create a test user
-        from accounts.models import User
-        user = request.user if request.user.is_authenticated else User.objects.first()
-        if not user:
-            user = User.objects.create_user(username='testuser', email='test@example.com')
-        
-        claim = serializer.save(user=user)
+        claim = serializer.save(user=request.user)
         
         # Create notification for user
         Notification.objects.create(
-            user=user,
+            user=request.user,
             title='Claim Submitted',
             message=f'Your {claim.get_claim_type_display()} claim for ${claim.amount_requested} has been submitted.',
             notification_type='claim_submitted'
