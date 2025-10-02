@@ -6,13 +6,14 @@ from django.contrib.auth import get_user_model
 from django.db.models import Count, Sum
 from applications.models import Application
 from claims.models import Claim
-from notifications.models import Event, Announcement, Notification
+from notifications.models import Event, Announcement, Notification, Meeting
 from payments.models import Payment
+from .permissions import IsAdminOrStaff
 
 User = get_user_model()
 
 @api_view(['GET'])
-@permission_classes([permissions.IsAuthenticated])
+@permission_classes([IsAdminOrStaff])
 def admin_dashboard_stats(request):
     """Get admin dashboard statistics"""
     stats = {
@@ -20,16 +21,18 @@ def admin_dashboard_stats(request):
         'total_applications': Application.objects.count(),
         'pending_applications': Application.objects.filter(status='pending').count(),
         'approved_applications': Application.objects.filter(status='approved').count(),
+        'rejected_applications': Application.objects.filter(status='rejected').count(),
         'total_claims': Claim.objects.count(),
         'pending_claims': Claim.objects.filter(status='pending').count(),
-        'total_payments': Payment.objects.aggregate(total=Sum('amount'))['total'] or 0,
-        'active_events': Event.objects.filter(is_active=True).count(),
-        'total_announcements': Announcement.objects.filter(is_active=True).count(),
+        'approved_claims': Claim.objects.filter(status='approved').count(),
+        'rejected_claims': Claim.objects.filter(status='rejected').count(),
+        'total_payments': Payment.objects.count(),
+        'total_revenue': float(Payment.objects.aggregate(total=Sum('amount'))['total'] or 0),
     }
     return Response(stats)
 
 @api_view(['GET'])
-@permission_classes([permissions.IsAuthenticated])
+@permission_classes([IsAdminOrStaff])
 def recent_activities(request):
     """Get recent admin activities"""
     activities = []
@@ -66,7 +69,7 @@ def recent_activities(request):
     return Response(activities[:10])
 
 @api_view(['GET'])
-@permission_classes([permissions.IsAuthenticated])
+@permission_classes([IsAdminOrStaff])
 def users_list(request):
     """Get list of all users"""
     users = User.objects.all().order_by('-date_joined')
@@ -89,7 +92,7 @@ def users_list(request):
     return Response(users_data)
 
 @api_view(['GET'])
-@permission_classes([permissions.IsAuthenticated])
+@permission_classes([IsAdminOrStaff])
 def applications_list(request):
     """Get list of all applications"""
     applications = Application.objects.all().order_by('-created_at')
@@ -112,7 +115,7 @@ def applications_list(request):
     return Response(apps_data)
 
 @api_view(['POST'])
-@permission_classes([AllowAny])
+@permission_classes([IsAdminOrStaff])
 def update_application_status(request, app_id):
     """Update application status"""
     try:
@@ -122,7 +125,8 @@ def update_application_status(request, app_id):
         
         if new_status in ['pending', 'approved', 'rejected']:
             application.status = new_status
-            application.admin_notes = admin_notes
+            if hasattr(application, 'admin_notes'):
+                application.admin_notes = admin_notes
             application.save()
             
             # Create notification for user
@@ -142,15 +146,10 @@ def update_application_status(request, app_id):
         return Response({'error': 'Application not found'}, status=status.HTTP_404_NOT_FOUND)
 
 @api_view(['POST'])
-@permission_classes([AllowAny])
+@permission_classes([IsAdminOrStaff])
 def create_announcement(request):
     """Create new announcement"""
     data = request.data
-    
-    # Get admin user or create mock admin
-    admin_user = request.user if request.user.is_authenticated else User.objects.filter(is_staff=True).first()
-    if not admin_user:
-        admin_user = User.objects.create_user(username='admin', email='admin@example.com', is_staff=True)
     
     announcement = Announcement.objects.create(
         title=data.get('title'),
@@ -158,7 +157,7 @@ def create_announcement(request):
         priority=data.get('priority', 'medium'),
         is_pinned=data.get('is_pinned', False),
         expires_at=data.get('expires_at'),
-        created_by=admin_user
+        created_by=request.user
     )
     
     # Create notifications for high priority announcements
@@ -182,15 +181,10 @@ def create_announcement(request):
     }, status=status.HTTP_201_CREATED)
 
 @api_view(['POST'])
-@permission_classes([AllowAny])
+@permission_classes([IsAdminOrStaff])
 def create_event(request):
     """Create new event"""
     data = request.data
-    
-    # Get admin user or create mock admin
-    admin_user = request.user if request.user.is_authenticated else User.objects.filter(is_staff=True).first()
-    if not admin_user:
-        admin_user = User.objects.create_user(username='admin', email='admin@example.com', is_staff=True)
     
     event = Event.objects.create(
         title=data.get('title'),
@@ -201,7 +195,7 @@ def create_event(request):
         is_featured=data.get('is_featured', False),
         registration_required=data.get('registration_required', False),
         max_attendees=data.get('max_attendees'),
-        created_by=admin_user
+        created_by=request.user
     )
     
     # Create notifications for all users
@@ -212,7 +206,7 @@ def create_event(request):
         notifications.append(Notification(
             user=user,
             title='New Event Created',
-            message=f'New event "{event.title}" scheduled for {event.date.strftime("%B %d, %Y")}.',
+            message=f'New event "{event.title}" has been created.',
             notification_type='event_created'
         ))
     
@@ -223,8 +217,47 @@ def create_event(request):
         'message': 'Event created successfully'
     }, status=status.HTTP_201_CREATED)
 
+@api_view(['POST'])
+@permission_classes([IsAdminOrStaff])
+def create_meeting(request):
+    """Create new meeting"""
+    data = request.data
+    
+    meeting = Meeting.objects.create(
+        title=data.get('title'),
+        description=data.get('description'),
+        date=data.get('date'),
+        duration=data.get('duration', 60),
+        type=data.get('type'),
+        max_participants=data.get('max_participants'),
+        meeting_link=data.get('meeting_link', ''),
+        require_registration=data.get('require_registration', False),
+        send_notifications=data.get('send_notifications', True),
+        created_by=request.user
+    )
+    
+    # Send notifications if enabled
+    if meeting.send_notifications:
+        users = User.objects.filter(is_active=True)
+        notifications = []
+        
+        for user in users:
+            notifications.append(Notification(
+                user=user,
+                title='New Meeting Scheduled',
+                message=f'Meeting "{meeting.title}" has been scheduled.',
+                notification_type='general'
+            ))
+        
+        Notification.objects.bulk_create(notifications)
+    
+    return Response({
+        'id': meeting.id,
+        'message': 'Meeting created successfully'
+    }, status=status.HTTP_201_CREATED)
+
 @api_view(['GET', 'PATCH', 'DELETE'])
-@permission_classes([IsAdminUser])
+@permission_classes([IsAdminOrStaff])
 def user_detail(request, user_id):
     """Get, update, or delete user"""
     try:
@@ -257,3 +290,119 @@ def user_detail(request, user_id):
             
     except User.DoesNotExist:
         return Response({'error': 'User not found'}, status=status.HTTP_404_NOT_FOUND)
+
+@api_view(['GET'])
+@permission_classes([IsAdminOrStaff])
+def admin_claims_list(request):
+    """Get all claims for admin"""
+    claims = Claim.objects.all().order_by('-created_at')
+    claims_data = []
+    
+    for claim in claims:
+        claims_data.append({
+            'id': claim.id,
+            'user': claim.user.username if claim.user else 'Unknown',
+            'user_email': claim.user.email if claim.user else '',
+            'claim_type': claim.get_claim_type_display(),
+            'amount_requested': str(claim.amount_requested),
+            'amount_approved': str(claim.amount_approved) if claim.amount_approved else None,
+            'status': claim.status,
+            'status_display': claim.get_status_display(),
+            'description': claim.description,
+            'supporting_documents': claim.supporting_documents.url if claim.supporting_documents else None,
+            'admin_notes': claim.admin_notes,
+            'created_at': claim.created_at.isoformat(),
+            'updated_at': claim.updated_at.isoformat()
+        })
+    
+    return Response(claims_data)
+
+@api_view(['PATCH'])
+@permission_classes([IsAdminOrStaff])
+def admin_update_claim_status(request, claim_id):
+    """Update claim status (admin only)"""
+    from django.utils import timezone
+    try:
+        claim = Claim.objects.get(id=claim_id)
+        
+        if 'status' in request.data:
+            claim.status = request.data['status']
+        if 'amount_approved' in request.data:
+            claim.amount_approved = request.data['amount_approved']
+        if 'admin_notes' in request.data:
+            claim.admin_notes = request.data['admin_notes']
+        
+        claim.reviewed_by = request.user
+        claim.reviewed_at = timezone.now()
+        claim.save()
+        
+        return Response({
+            'id': claim.id,
+            'status': claim.status,
+            'message': 'Claim updated successfully'
+        })
+        
+    except Claim.DoesNotExist:
+        return Response({'error': 'Claim not found'}, status=status.HTTP_404_NOT_FOUND)
+
+@api_view(['POST'])
+@permission_classes([IsAdminOrStaff])
+def make_user_admin(request, user_id):
+    """Promote user to admin"""
+    try:
+        user = User.objects.get(id=user_id)
+        user.is_staff = True
+        user.save()
+        
+        return Response({
+            'message': f'User {user.username} promoted to admin successfully'
+        })
+        
+    except User.DoesNotExist:
+        return Response({'error': 'User not found'}, status=status.HTTP_404_NOT_FOUND)
+
+@api_view(['GET'])
+@permission_classes([IsAdminOrStaff])
+def get_application_documents(request, app_id):
+    """Get application documents"""
+    try:
+        application = Application.objects.get(id=app_id)
+        documents = []
+        
+        # Check for document fields in application model
+        if hasattr(application, 'documents_review_notes') and application.documents_review_notes:
+            documents.append({
+                'type': 'review_notes',
+                'content': application.documents_review_notes
+            })
+        
+        return Response({
+            'application_id': app_id,
+            'documents': documents,
+            'applicant': f'{application.first_name} {application.last_name}'
+        })
+        
+    except Application.DoesNotExist:
+        return Response({'error': 'Application not found'}, status=status.HTTP_404_NOT_FOUND)
+
+@api_view(['GET'])
+@permission_classes([IsAdminOrStaff])
+def admin_payments_list(request):
+    """Get all payments for admin"""
+    payments = Payment.objects.all().order_by('-created_at')
+    payments_data = []
+    
+    for payment in payments:
+        payments_data.append({
+            'id': payment.id,
+            'user': payment.user.username if payment.user else 'Unknown',
+            'user_email': payment.user.email if payment.user else '',
+            'amount': str(payment.amount),
+            'payment_method': payment.payment_method,
+            'status': payment.status,
+            'transaction_id': payment.transaction_id,
+            'created_at': payment.created_at.isoformat(),
+            'updated_at': payment.updated_at.isoformat()
+        })
+    
+    return Response(payments_data)

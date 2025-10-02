@@ -86,3 +86,67 @@ def my_applications(request):
         })
     
     return Response(applications_data)
+
+@api_view(['POST'])
+@permission_classes([AllowAny])
+def submit_application(request):
+    """Submit new application"""
+    data = request.data
+    
+    # Get user from token or use default for testing
+    from accounts.models import User
+    if request.user.is_authenticated:
+        user = request.user
+    else:
+        user, created = User.objects.get_or_create(
+            email='test@example.com',
+            defaults={'username': 'testuser', 'first_name': 'Test', 'last_name': 'User'}
+        )
+    
+    # Set amount based on application type
+    app_type = data.get('application_type', 'single')
+    amount = 200 if app_type == 'single' else 400
+    
+    application = Application.objects.create(
+        user=user,
+        application_type=app_type,
+        first_name=data.get('first_name'),
+        middle_name=data.get('middle_name', ''),
+        last_name=data.get('last_name'),
+        email=data.get('email'),
+        phone=data.get('phone'),
+        address=data.get('address'),
+        city=data.get('city'),
+        state=data.get('state'),
+        zip_code=data.get('zip_code'),
+        amount=amount,
+        registration_fee=data.get('registration_fee', 50.00),
+        constitution_agreed=data.get('constitution_agreed', False),
+        status='pending'
+    )
+    
+    return Response({
+        'id': application.id,
+        'message': 'Application submitted successfully',
+        'status': application.status,
+        'amount': float(application.amount)
+    }, status=status.HTTP_201_CREATED)
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def application_documents(request, application_id):
+    """Get documents for specific application"""
+    try:
+        application = Application.objects.get(id=application_id)
+        # Mock document data
+        documents = [
+            {
+                'id': 1,
+                'name': 'ID Document',
+                'file_url': '/media/documents/id_doc.pdf',
+                'uploaded_at': '2025-09-28T10:00:00Z'
+            }
+        ]
+        return Response(documents)
+    except Application.DoesNotExist:
+        return Response({'error': 'Application not found'}, status=status.HTTP_404_NOT_FOUND)

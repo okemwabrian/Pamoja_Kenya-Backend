@@ -122,3 +122,26 @@ def beneficiaries_list(request):
         })
     
     return Response(beneficiaries_data)
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def claim_documents(request, claim_id):
+    """Get documents for specific claim"""
+    try:
+        claim = Claim.objects.get(id=claim_id)
+        # Check if user owns the claim or is admin
+        if claim.user != request.user and not request.user.is_staff:
+            return Response({'error': 'Permission denied'}, status=status.HTTP_403_FORBIDDEN)
+        
+        documents = []
+        if claim.supporting_documents:
+            documents.append({
+                'id': 1,
+                'name': 'Supporting Document',
+                'file_url': claim.supporting_documents.url,
+                'uploaded_at': claim.created_at.isoformat()
+            })
+        
+        return Response(documents)
+    except Claim.DoesNotExist:
+        return Response({'error': 'Claim not found'}, status=status.HTTP_404_NOT_FOUND)

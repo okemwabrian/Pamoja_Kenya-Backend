@@ -86,6 +86,33 @@ class Announcement(models.Model):
         from django.utils import timezone
         return self.expires_at and self.expires_at < timezone.now()
 
+class Meeting(models.Model):
+    MEETING_TYPES = [
+        ('zoom', 'Zoom'),
+        ('teams', 'Microsoft Teams'),
+        ('google', 'Google Meet'),
+        ('physical', 'Physical Meeting'),
+    ]
+    
+    title = models.CharField(max_length=200)
+    description = models.TextField()
+    date = models.DateTimeField()
+    duration = models.IntegerField(help_text="Duration in minutes")
+    type = models.CharField(max_length=20, choices=MEETING_TYPES)
+    max_participants = models.IntegerField(null=True, blank=True)
+    meeting_link = models.URLField(blank=True)
+    require_registration = models.BooleanField(default=False)
+    send_notifications = models.BooleanField(default=True)
+    created_by = models.ForeignKey(User, on_delete=models.CASCADE)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    
+    class Meta:
+        ordering = ['date']
+    
+    def __str__(self):
+        return self.title
+
 class EventRegistration(models.Model):
     event = models.ForeignKey(Event, on_delete=models.CASCADE, related_name='registrations')
     user = models.ForeignKey(User, on_delete=models.CASCADE)

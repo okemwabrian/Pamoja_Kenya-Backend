@@ -131,3 +131,46 @@ def register_for_event(request, event_id):
             
     except Event.DoesNotExist:
         return Response({'error': 'Event not found'}, status=status.HTTP_404_NOT_FOUND)
+
+@api_view(['POST'])
+@permission_classes([IsAdminUser])
+def create_announcement(request):
+    """Create new announcement (admin only)"""
+    data = request.data
+    announcement = Announcement.objects.create(
+        title=data.get('title'),
+        content=data.get('content'),
+        priority=data.get('priority', 'medium'),
+        is_pinned=data.get('is_pinned', False)
+    )
+    return Response({
+        'id': announcement.id,
+        'title': announcement.title,
+        'content': announcement.content,
+        'priority': announcement.priority,
+        'is_pinned': announcement.is_pinned,
+        'created_at': announcement.created_at
+    }, status=status.HTTP_201_CREATED)
+
+@api_view(['POST'])
+@permission_classes([IsAdminUser])
+def create_event(request):
+    """Create new event (admin only)"""
+    data = request.data
+    event = Event.objects.create(
+        title=data.get('title'),
+        description=data.get('description'),
+        date=data.get('date'),
+        location=data.get('location'),
+        is_featured=data.get('is_featured', False),
+        registration_required=data.get('registration_required', True)
+    )
+    return Response({
+        'id': event.id,
+        'title': event.title,
+        'description': event.description,
+        'date': event.date,
+        'location': event.location,
+        'is_featured': event.is_featured,
+        'registration_required': event.registration_required
+    }, status=status.HTTP_201_CREATED)

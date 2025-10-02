@@ -96,7 +96,8 @@ class Application(models.Model):
     documents_reviewed_at = models.DateTimeField(null=True, blank=True)
     
     # Application Details
-    amount = models.DecimalField(max_digits=10, decimal_places=2)
+    amount = models.DecimalField(max_digits=10, decimal_places=2)  # $200 single, $400 double
+    registration_fee = models.DecimalField(max_digits=10, decimal_places=2, default=50.00)
     notes = models.TextField(blank=True)
     admin_notes = models.TextField(blank=True)
     constitution_agreed = models.BooleanField(default=False)

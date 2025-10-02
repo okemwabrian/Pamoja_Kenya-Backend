@@ -4,6 +4,7 @@ from django.conf import settings
 from django.conf.urls.static import static
 from missing_views import profile, stats, password_reset, admin_stats
 from accounts.views import notifications_list, notifications_events, notifications_announcements, activities_view
+from accounts.dashboard_views import dashboard_stats, dashboard_activities
 
 urlpatterns = [
     path('admin/', admin.site.urls),
@@ -14,6 +15,9 @@ urlpatterns = [
     path('api/admin/', include('admin_api.urls')),
     path('api/claims/', include('claims.urls')),
     path('api/notifications/', include('notifications.urls')),
+    # Dashboard endpoints
+    path('api/dashboard/stats/', dashboard_stats, name='dashboard_stats'),
+    path('api/dashboard/activities/', dashboard_activities, name='dashboard_activities'),
     # Direct endpoints for frontend compatibility
     path('api/events/', include('notifications.urls')),
     path('api/announcements/', include('notifications.urls')),
