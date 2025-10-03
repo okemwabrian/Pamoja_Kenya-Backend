@@ -79,9 +79,7 @@ def users_list(request):
             'last_name': user.last_name,
             'is_active': user.is_active,
             'is_staff': user.is_staff,
-            'date_joined': user.date_joined.strftime('%Y-%m-%d'),
-            'applications_count': user.applications.count(),
-            'claims_count': user.claims.count() if hasattr(user, 'claims') else 0
+            'date_joined': user.date_joined.isoformat()
         })
     
     return Response(users_data)
@@ -324,16 +322,13 @@ def admin_claims_list(request):
             'user': {'username': claim.user.username if claim.user else 'Unknown'},
             'claim_type': claim.get_claim_type_display(),
             'amount_requested': float(claim.amount_requested),
+            'amount_approved': float(claim.amount_approved) if claim.amount_approved else 0,
             'status': claim.status,
             'description': claim.description,
-            'created_at': claim.created_at.isoformat(),
-            'supporting_documents': bool(claim.supporting_documents)
+            'admin_notes': claim.admin_notes or '',
+            'supporting_documents': claim.supporting_documents.url if claim.supporting_documents else '',
+            'created_at': claim.created_at.isoformat()
         }
-        
-        if claim.amount_approved:
-            claim_data['amount_approved'] = float(claim.amount_approved)
-        if claim.admin_notes:
-            claim_data['admin_notes'] = claim.admin_notes
             
         claims_data.append(claim_data)
     
@@ -647,12 +642,9 @@ def admin_contacts_list(request):
             'email': contact.email,
             'phone': contact.phone,
             'subject': contact.subject,
-            'help_type': contact.help_type,
             'message': contact.message,
             'status': contact.status,
-            'admin_notes': contact.admin_notes,
-            'created_at': contact.created_at.isoformat(),
-            'resolved_at': contact.resolved_at.isoformat() if contact.resolved_at else None
+            'created_at': contact.created_at.isoformat()
         })
     return Response(data)
 
